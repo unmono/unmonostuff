@@ -8,3 +8,7 @@ class UserDoesNotExist(Exception):
 
 class DatabaseCorrupted(Exception):
     pass
+
+
+class UserClassAttributeError(AttributeError):
+    pass
