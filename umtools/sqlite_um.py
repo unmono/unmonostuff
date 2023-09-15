@@ -8,7 +8,7 @@ from .utils import (
     register_sqlite_converters,
     register_sqilte_adapters,
 )
-from .user import BaseUser
+from .user import UserBaseModel
 from .exceptions import UserClassAttributeError
 
 
@@ -33,7 +33,7 @@ class SQLiteUserManager:
 
     def __init__(
         self,
-        user_class: Type[BaseUser],
+        user_class: Type[UserBaseModel],
         database_path: str | bytes | os.PathLike = './users.sqlite',
         table_name: str | None = 'users',
         logger: Logger | None = None,
@@ -50,7 +50,7 @@ class SQLiteUserManager:
         self.register_types()
         self.prepare_db()
 
-    def add_user(self, user: BaseUser) -> Any:
+    def add_user(self, user: UserBaseModel) -> Any:
         keys, values = user.insert_keys_and_values
         keys_str = ', '.join(keys)
         values_placeholders = ', '.join(['?'] * len(values))
@@ -116,7 +116,7 @@ class SQLiteUserManager:
                 WHERE {self.user_class.pk_column()} = ?;
             ''', (pk, ))
 
-    def update_user(self, user_object: BaseUser) -> None:
+    def update_user(self, user_object: UserBaseModel) -> None:
         # todo: check if user exists?
         keys_and_placeholders, values = user_object.update_pairs
         with self._db_connection() as db:
@@ -151,7 +151,7 @@ class SQLiteUserManager:
         """
 
         # Query saved schema to check WITHOUT ROWID flag
-        schema_stmt = f'SELECT sql from sqlite_master WHERE `name` = ?;'
+        schema_stmt = f'SELECT sql from sqlite_master WHERE name = ?;'
         cursor = db.execute(schema_stmt, (self.table_name, ))
         table_schema: str = cursor.fetchone()[0].lower()
         without_rowid = 'without rowid' in table_schema

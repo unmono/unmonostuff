@@ -8,9 +8,10 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from umtools.sqlite_um import SQLiteUserManager
-from .test_user_class import RowidUser, RowidPseudo, UUIDUser, NeedsAdapters, Department, departments
+from .test_user_class import RowidUser, RowidAlias, UUIDUser
 
 import logging
+
 
 def uuid_adapter(uuid_obj):
     return str(uuid_obj)
@@ -19,15 +20,6 @@ def uuid_adapter(uuid_obj):
 def uuid_converter(uuid_str: bytes) -> UUID:
     uuid_a = uuid_str.decode()
     return UUID(uuid_a)
-
-
-def department_adapter(dep: Department):
-    return dep.dep_code
-
-
-def department_converter(dep_code: bytes):
-    code = int(dep_code)
-    return departments[code]
 
 
 @contextlib.contextmanager
@@ -50,9 +42,6 @@ class BasicUserManagerTestCase(unittest.TestCase):
         self.db_path = './test_user_database.sqlite'
 
     def setUp(self) -> None:
-        db_path = Path(self.db_path)
-        if db_path.exists():
-            os.remove(self.db_path)
         self.test_user = RowidUser(
             name='test_user',
             last_name='LN',
@@ -126,7 +115,8 @@ class BasicUserManagerTestCase(unittest.TestCase):
             self.um.delete_user(first_user['pk'])
             count = conn.execute(
                 f'SELECT COUNT(*) FROM {self.table_name} WHERE {self.test_user.pk_column()} = ?;',
-            (first_user['pk'], )).fetchone()[0]
+                (first_user['pk'], )
+            ).fetchone()[0]
         self.assertEqual(count, 0)
 
     def test_update_user(self):
@@ -144,9 +134,6 @@ class BasicUserManagerTestCase(unittest.TestCase):
 
 class TestUUIDUserManagerTestCase(BasicUserManagerTestCase):
     def setUp(self) -> None:
-        db_path = Path(self.db_path)
-        if db_path.exists():
-            os.remove(self.db_path)
         self.test_user = UUIDUser(
             name='test_user',
             tel=12345,
@@ -182,14 +169,11 @@ class TestUUIDUserManagerTestCase(BasicUserManagerTestCase):
 
 class TestRowidPseudoUserManagerTestCase(BasicUserManagerTestCase):
     def setUp(self) -> None:
-        db_path = Path(self.db_path)
-        if db_path.exists():
-            os.remove(self.db_path)
-        self.test_user = RowidPseudo(
+        self.test_user = RowidAlias(
             name='test_user',
         )
         self.um = SQLiteUserManager(
-            user_class=RowidPseudo,
+            user_class=RowidAlias,
             database_path=self.db_path,
             table_name=self.table_name,
         )

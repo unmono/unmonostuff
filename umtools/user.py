@@ -1,20 +1,21 @@
-import dataclasses
 from dataclasses import dataclass, Field, field, fields
-from abc import ABC, abstractmethod
-from typing import Any
+from abc import ABC
+from typing import Any, Unpack, TypedDict
 
 from .utils import get_datatype
-from .exceptions import UserClassAttributeError
 
-import logging
+
+# TODO: ABSTRACT MORE.
+
+
+FieldTypes = TypedDict('FieldTypes', field.__kwdefaults__)
+
 
 def um_field(
-    goes_to_db: bool = True,
-    rowid_pseudo: bool = False,
-    lookup_field: bool = False,
     datatype: str | None = None,
     definition: str | None = None,
-    **kwargs,
+    lookup_field: bool = False,
+    **kwargs: Unpack[FieldTypes],
 ) -> Field:
     """
     Helper function to insert needed attributes in dataclasses.Field.metadata
@@ -24,9 +25,6 @@ def um_field(
         - sqlite3 module type adaptation and convertion:
           https://docs.python.org/3/library/sqlite3.html#how-to-adapt-custom-python-types-to-sqlite-values
 
-    :param goes_to_db: pass False if you don't want this attribute in database
-    :param rowid_pseudo: if you want to use sequential primary key but need to use
-                         name other than 'rowid' pass True
     :param datatype: datatype name that you want to use in column definition
     :param definition: column constraint if needed
     :param lookup_field: column used to
@@ -34,20 +32,18 @@ def um_field(
     :return: dataclasses.Field instance
     """
     metadata = {
-        'goes_to_db': goes_to_db,
-        'rowid_pseudo': rowid_pseudo,
+        'goes_to_db': True,
         'lookup_field': lookup_field,
     }
     if datatype is not None:
         metadata['datatype'] = datatype
     if definition is not None:
         metadata['definition'] = definition
-
     return field(metadata=metadata, **kwargs)
 
 
 @dataclass(kw_only=True)
-class BaseUser(ABC):
+class UserBaseModel(ABC):
     """
     Base class for user class in order to use it with SQLiteUserManager.
     User class has to be declared as @dataclass with kw_only=True.
@@ -60,14 +56,6 @@ class BaseUser(ABC):
     """
     pk: Any = None
 
-    @property
-    @abstractmethod
-    def is_superuser(self) -> bool:
-        """
-        Provide your method to determine wether the user is super
-        """
-        pass
-
     @classmethod
     def without_rowid(cls) -> bool:
         """
@@ -78,6 +66,13 @@ class BaseUser(ABC):
         return False
 
     @classmethod
+    def table_constraints(cls) -> str:
+        """
+        Overwrite this method if you want to set some table constraints.
+        """
+        return ''
+
+    @classmethod
     def _get_db_fields(cls) -> list[Field]:
         db_fields: list[Field] = []
         for f in fields(cls):
@@ -85,7 +80,7 @@ class BaseUser(ABC):
                 continue
             db_fields.append(f)
         if not db_fields:
-            raise UserClassAttributeError('No database fields defined')
+            raise AttributeError('No database fields defined')
         return db_fields
 
     @classmethod
@@ -94,16 +89,37 @@ class BaseUser(ABC):
         Determines which column is used as primary key
         :return: name of a primary key column
         """
+        pk: str | None = None
+
+        # Search for pk in table constraints
+        constraints = cls.table_constraints().lower()
+        if (start := constraints.find('primary key')) + 1:
+            end = constraints.find(')', start)
+            pk_definition = cls.table_constraints()[start:end]
+            if ',' in pk_definition:
+                raise ValueError('Multiple column primary keys are not supported yet')
+            pk = pk_definition.split(' ')[0]
+
+        # Search for pk among fields
         for f in cls._get_db_fields():
             definition = f.metadata.get('definition')
             if definition is not None and 'primary key' in definition.lower():
-                return f.name
-            if cls.without_rowid():
-                raise UserClassAttributeError('No primary key defined among user class attributes')
-        return 'rowid'
+                if pk is not None:
+                    raise AttributeError('You can\'t define multiple primary keys')
+                pk = f.name
+
+        # Don't allow to not define a pk and restrict rowid
+        if pk is None and cls.without_rowid():
+            raise AttributeError('No primary key defined among user class attributes')
+
+        return pk if pk is not None else 'rowid'
 
     @classmethod
     def lookup_field(cls) -> str:
+        """
+        Lookup field is that you want to use as key in 'like mapping' usage
+        :return: name of the field marked as 'lookup_field' or one that used as pk
+        """
         for f in cls._get_db_fields():
             if f.metadata.get('lookup_field'):
                 return f.name

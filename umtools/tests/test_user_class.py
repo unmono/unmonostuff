@@ -1,130 +1,137 @@
+import unittest
 import dataclasses
 import datetime
-# import pytest
 from uuid import UUID, uuid4
 
-from umtools.user import BaseUser, um_field
-from umtools.exceptions import UserClassAttributeError
+from umtools.user import UserBaseModel, um_field
 
 
 @dataclasses.dataclass(kw_only=True)
-class RowidUser(BaseUser):
+class RowidUser(UserBaseModel):
     name: str = um_field(datatype='TEXT', lookup_field=True)
     last_name: str = um_field()
     tel: int = um_field(definition='UNIQUE')
 
-    def is_superuser(self) -> bool:
-        return False
+
+class RowidUserTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.user = RowidUser(
+            name='Hey',
+            last_name='Arnold',
+            tel=12345,
+        )
+        self.pk_column = 'rowid'
+        self.lookup_field = 'name'
+        self.schema = [
+            ('name', 'TEXT', ''),
+            ('last_name', 'str', ''),
+            ('tel', 'int', 'UNIQUE'),
+        ]
+        self.select_keys = [
+            'rowid AS pk',
+            'name',
+            'last_name',
+            'tel',
+        ]
+        self.insert_keys_and_values = (
+            ['name', 'last_name', 'tel'],
+            ['Hey', 'Arnold', 12345]
+        )
+        self.update_pairs = (
+            ['name = ?', 'last_name = ?', 'tel = ?'],
+            ['Hey', 'Arnold', 12345]
+        )
+
+    def test_pk_column(self):
+        self.assertEqual(self.user.pk_column(), self.pk_column)
+
+    def test_lookup_field(self):
+        self.assertEqual(self.user.lookup_field(), self.lookup_field)
+
+    def test_schema(self):
+        self.assertEqual(self.user.schema(), self.schema)
+
+    def test_select_keys(self):
+        self.assertEqual(self.user.select_keys(), self.select_keys)
+
+    def test_insert_keys_and_values(self):
+        self.assertEqual(self.user.insert_keys_and_values, self.insert_keys_and_values)
+
+    def test_updates_pairs(self):
+        self.assertEqual(self.user.update_pairs, self.update_pairs)
 
 
 @dataclasses.dataclass(kw_only=True)
-class UUIDUser(BaseUser):
+class UUIDUser(UserBaseModel):
     uuid: UUID = um_field(default_factory=uuid4, definition='PRIMARY KEY')
     name: str = um_field()
     tel: int = um_field(definition='UNIQUE')
-
-    def is_superuser(self) -> bool:
-        return False
 
     @classmethod
     def without_rowid(cls) -> bool:
         return True
 
 
+class UUIDUserTestCase(RowidUserTestCase):
+    def setUp(self) -> None:
+        self.user = UUIDUser(
+            name='Arnold',
+            tel=12345,
+        )
+        self.pk_column = 'uuid'
+        self.lookup_field = 'uuid'
+        self.schema = [
+            ('uuid', 'UUID', 'PRIMARY KEY'),
+            ('name', 'str', ''),
+            ('tel', 'int', 'UNIQUE'),
+        ]
+        self.select_keys = [
+            'uuid AS pk',
+            'uuid',
+            'name',
+            'tel',
+        ]
+        self.insert_keys_and_values = (
+            ['uuid', 'name', 'tel'],
+            [self.user.uuid, 'Arnold', 12345]
+        )
+        self.update_pairs = (
+            ['uuid = ?', 'name = ?', 'tel = ?'],
+            [self.user.uuid, 'Arnold', 12345]
+        )
+
+    def test_uuid_pk(self):
+        self.assertIsInstance(self.user.uuid, UUID)
+
+
 @dataclasses.dataclass(kw_only=True)
-class RowidPseudo(BaseUser):
-    id: int | None = um_field(rowid_pseudo=True, datatype='INTEGER', definition='PRIMARY KEY ASC', default=None)
-    name: str = um_field(datatype='TEXT')
+class RowidAlias(UserBaseModel):
+    id: int | None = um_field(datatype='INTEGER', definition='PRIMARY KEY ASC', default=None)
+    name: str = um_field(datatype='TEXT', lookup_field=True)
     non_schema_field: datetime.datetime = dataclasses.field(init=False, default_factory=datetime.datetime.now)
 
-    def is_superuser(self) -> bool:
-        return False
 
-
-class Department:
-    def __init__(self, dep_code: int, dep_name: str):
-        self.dep_code = dep_code
-        self.dep_name = dep_name
-
-
-dep1 = Department(100, 'Peasants')
-dep2 = Department(101, 'HR department')
-
-departments = {
-    dep1.dep_code: dep1,
-    dep2.dep_code: dep2
-}
-
-
-@dataclasses.dataclass(kw_only=True)
-class NeedsAdapters(BaseUser):
-    name: str = um_field(datatype='TEXT')
-    department: Department = um_field()
-
-    def is_superuser(self) -> bool:
-        return False
-
-
-# @pytest.mark.parametrize(
-#     'user_class, pk_column, schema, select_keys',
-#     [
-#         (
-#             RowidUser,
-#             'rowid',
-#             [('name', 'TEXT', ''), ('last_name', 'str', ''), ('tel', 'int', 'UNIQUE')],
-#             ['rowid AS pk', 'name', 'last_name', 'tel']
-#         ),
-#         (
-#             UUIDUser,
-#             'uuid',
-#             [('uuid', 'UUID', 'PRIMARY KEY'), ('name', 'str', ''), ('tel', 'int', 'UNIQUE')],
-#             ['uuid AS pk', 'uuid', 'name', 'tel']
-#         ),
-#         (
-#             RowidPseudo,
-#             'id',
-#             [('id', 'INTEGER', 'PRIMARY KEY ASC'), ('name', 'TEXT', '')],
-#             ['id AS pk', 'id', 'name']
-#         ),
-#         (
-#             NeedsAdapters,
-#             'rowid',
-#             [('name', 'TEXT', ''), ('department', 'Department', '')],
-#             ['rowid AS pk', 'name', 'department']
-#         )
-#     ]
-# )
-# def test_user_class(user_class: type[BaseUser], pk_column, schema, select_keys):
-#     assert user_class.pk_column() == pk_column
-#     assert user_class.schema() == schema
-#     assert user_class.select_keys() == select_keys
-#
-#
-# @dataclasses.dataclass(kw_only=True)
-# class NoFields(BaseUser):
-#     name: str
-#     tel: int = dataclasses.field(default=1234)
-#
-#
-# @dataclasses.dataclass(kw_only=True)
-# class NoPKUser(RowidUser):
-#
-#     @classmethod
-#     def without_rowid(cls) -> bool:
-#         return True
-#
-#
-# @pytest.mark.parametrize(
-#     'user_class, expected_exception, text_to_match',
-#     [
-#         (NoFields, UserClassAttributeError, 'No database fields'),
-#         (NoPKUser, UserClassAttributeError, 'primary key'),
-#     ]
-# )
-# def text_user_class_exceptions(
-#         user_class: type[BaseUser],
-#         expected_exception: type[Exception],
-#         text_to_match: str
-# ):
-#     with pytest.raises(expected_exception, match=text_to_match):
-#         user_class.pk_column()
+class RowidAliasTestCase(RowidUserTestCase):
+    def setUp(self) -> None:
+        self.user = RowidAlias(
+            name='Arnold',
+        )
+        self.pk_column = 'id'
+        self.lookup_field = 'name'
+        self.schema = [
+            ('id', 'INTEGER', 'PRIMARY KEY ASC'),
+            ('name', 'TEXT', ''),
+        ]
+        self.select_keys = [
+            'id AS pk',
+            'id',
+            'name',
+        ]
+        self.insert_keys_and_values = (
+            ['id', 'name'],
+            [None, 'Arnold'],
+        )
+        self.update_pairs = (
+            ['id = ?', 'name = ?'],
+            [None, 'Arnold'],
+        )
